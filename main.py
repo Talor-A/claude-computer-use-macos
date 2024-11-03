@@ -19,23 +19,8 @@ async def main():
         )
     provider = APIProvider.ANTHROPIC
 
-    # Check if the instruction is provided via command line arguments
-    if len(sys.argv) > 1:
-        instruction = " ".join(sys.argv[1:])
-    else:
-        instruction = "Save an image of a cat to the desktop."
-
-    print(
-        f"Starting Claude 'Computer Use'.\nPress ctrl+c to stop.\nInstructions provided: '{instruction}'"
-    )
-
-    # Set up the initial messages
-    messages: list[BetaMessageParam] = [
-        {
-            "role": "user",
-            "content": instruction,
-        }
-    ]
+    # Initialize messages list
+    messages: list[BetaMessageParam] = []
 
     # Define callbacks (you can customize these)
     def output_callback(content_block):
@@ -48,7 +33,6 @@ async def main():
         if result.error:
             print(f"!!! Tool Error [{tool_use_id}]:", result.error)
         if result.base64_image:
-            # Save the image to a file if needed
             os.makedirs("screenshots", exist_ok=True)
             image_data = result.base64_image
             with open(f"screenshots/screenshot_{tool_use_id}.png", "wb") as f:
@@ -66,21 +50,49 @@ async def main():
                 print(f"\n🔧 Tool Use ({item['name']}):")
                 print(f"   Input: {item['input']}")
 
-    # Run the sampling loop
-    messages = await sampling_loop(
-        model="claude-3-5-sonnet-20241022",
-        provider=provider,
-        system_prompt_suffix="",
-        messages=messages,
-        output_callback=output_callback,
-        tool_output_callback=tool_output_callback,
-        api_response_callback=api_response_callback,
-        api_key=api_key,
-        only_n_most_recent_images=10,
-        max_tokens=4096,
-        max_retries=3,
-        initial_retry_delay=8,
+    print(
+        "Starting Claude 'Computer Use' chat session.\nType 'exit' to quit.\nPress Enter after each message."
     )
+
+    while True:
+        # Get user input
+        try:
+            user_input = input("\nYou: ").strip()
+            if user_input.lower() == "exit":
+                print("Ending chat session...")
+                break
+
+            if user_input:
+                # Add user message to messages list
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": user_input,
+                    }
+                )
+
+                # Run the sampling loop for this interaction
+                messages = await sampling_loop(
+                    model="claude-3-5-sonnet-20241022",
+                    provider=provider,
+                    system_prompt_suffix="",
+                    messages=messages,
+                    output_callback=output_callback,
+                    tool_output_callback=tool_output_callback,
+                    api_response_callback=api_response_callback,
+                    api_key=api_key,
+                    only_n_most_recent_images=10,
+                    max_tokens=4096,
+                    max_retries=3,
+                    initial_retry_delay=8,
+                )
+
+        except KeyboardInterrupt:
+            print("\nEnding chat session...")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+            continue
 
 
 if __name__ == "__main__":
