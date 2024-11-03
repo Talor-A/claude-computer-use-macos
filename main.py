@@ -50,9 +50,37 @@ async def main():
                 print(f"\n🔧 Tool Use ({item['name']}):")
                 print(f"   Input: {item['input']}")
 
-    print(
-        "Starting Claude 'Computer Use' chat session.\nType 'exit' to quit.\nPress Enter after each message."
-    )
+    # Check for command line argument
+    initial_input = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else None
+
+    if initial_input:
+        # Add initial input to messages
+        messages.append(
+            {
+                "role": "user",
+                "content": initial_input,
+            }
+        )
+
+        # Process initial input
+        messages = await sampling_loop(
+            model="claude-3-5-sonnet-20241022",
+            provider=provider,
+            system_prompt_suffix="",
+            messages=messages,
+            output_callback=output_callback,
+            tool_output_callback=tool_output_callback,
+            api_response_callback=api_response_callback,
+            api_key=api_key,
+            only_n_most_recent_images=10,
+            max_tokens=4096,
+            max_retries=3,
+            initial_retry_delay=8,
+        )
+    else:
+        print(
+            "Starting Claude 'Computer Use' chat session.\nType 'exit' to quit.\nPress Enter after each message."
+        )
 
     while True:
         # Get user input
