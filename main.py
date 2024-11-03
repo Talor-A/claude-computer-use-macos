@@ -56,11 +56,15 @@ async def main():
             print(f"Took screenshot screenshot_{tool_use_id}.png")
 
     def api_response_callback(response: APIResponse[BetaMessage]):
-        print(
-            "\n---------------\nAPI Response:\n",
-            json.dumps(json.loads(response.text)["content"], indent=4),  # type: ignore
-            "\n",
-        )
+        content = json.loads(response.text)["content"]
+        print("\n---------------\nAPI Response:")
+
+        for item in content:
+            if item["type"] == "text":
+                print("\n🤖 Assistant:", item["text"])
+            elif item["type"] == "tool_use":
+                print(f"\n🔧 Tool Use ({item['name']}):")
+                print(f"   Input: {item['input']}")
 
     # Run the sampling loop
     messages = await sampling_loop(
@@ -74,6 +78,8 @@ async def main():
         api_key=api_key,
         only_n_most_recent_images=10,
         max_tokens=4096,
+        max_retries=3,
+        initial_retry_delay=8,
     )
 
 

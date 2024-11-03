@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, cast
+import asyncio
 
 from anthropic import Anthropic, AnthropicBedrock, AnthropicVertex, APIResponse
 from anthropic.types import (
@@ -73,9 +74,12 @@ async def sampling_loop(
     api_key: str,
     only_n_most_recent_images: int | None = None,
     max_tokens: int = 4096,
+    max_retries: int = 3,
+    initial_retry_delay: float = 1.0,
 ):
     """
     Agentic sampling loop for the assistant/tool interaction of computer use.
+    Added retry logic with exponential backoff for rate limits.
     """
     tool_collection = ToolCollection(
         ComputerTool(),
@@ -90,29 +94,42 @@ async def sampling_loop(
         if only_n_most_recent_images:
             _maybe_filter_to_n_most_recent_images(messages, only_n_most_recent_images)
 
-        if provider == APIProvider.ANTHROPIC:
-            client = Anthropic(api_key=api_key)
-        elif provider == APIProvider.VERTEX:
-            client = AnthropicVertex()
-        elif provider == APIProvider.BEDROCK:
-            client = AnthropicBedrock()
+        retry_count = 0
+        retry_delay = initial_retry_delay
 
-        # Call the API
-        # we use raw_response to provide debug information to streamlit. Your
-        # implementation may be able call the SDK directly with:
-        # `response = client.messages.create(...)` instead.
-        raw_response = client.beta.messages.with_raw_response.create(
-            max_tokens=max_tokens,
-            messages=messages,
-            model=model,
-            system=system,
-            tools=tool_collection.to_params(),
-            betas=["computer-use-2024-10-22"],
-        )
+        while retry_count <= max_retries:
+            try:
+                if provider == APIProvider.ANTHROPIC:
+                    client = Anthropic(api_key=api_key)
+                elif provider == APIProvider.VERTEX:
+                    client = AnthropicVertex()
+                elif provider == APIProvider.BEDROCK:
+                    client = AnthropicBedrock()
 
-        api_response_callback(cast(APIResponse[BetaMessage], raw_response))
+                raw_response = client.beta.messages.with_raw_response.create(
+                    max_tokens=max_tokens,
+                    messages=messages,
+                    model=model,
+                    system=system,
+                    tools=tool_collection.to_params(),
+                    betas=["computer-use-2024-10-22"],
+                )
 
-        response = raw_response.parse()
+                api_response_callback(cast(APIResponse[BetaMessage], raw_response))
+                response = raw_response.parse()
+                break  # Success, exit retry loop
+
+            except Exception as e:
+                if "rate_limit_error" in str(e):
+                    if retry_count == max_retries:
+                        raise  # Re-raise if we've exhausted retries
+
+                    retry_count += 1
+                    print(f"Rate limit hit, retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    raise  # Re-raise if it's not a rate limit error
 
         messages.append(
             {
